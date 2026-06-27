@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -25,57 +25,6 @@ interface DragStartInfo {
     piece: Piece;
     point: THREE.Vector3;
     normal: THREE.Vector3;
-}
-
-function createLogoTexture() {
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 512;
-
-    const context = canvas.getContext('2d');
-
-    if (!context) {
-        return new THREE.CanvasTexture(canvas);
-    }
-
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    context.fillStyle = '#111827';
-    context.beginPath();
-    context.roundRect(72, 72, 368, 368, 96);
-    context.fill();
-
-    context.strokeStyle = '#7DD3FC';
-    context.lineWidth = 18;
-    context.stroke();
-
-    context.fillStyle = '#F8FAFC';
-    context.font = '800 138px Arial';
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.fillText('CX', 256, 266);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-
-    return texture;
-}
-
-function CubexLogo() {
-    const logoTexture = useMemo(() => createLogoTexture(), []);
-
-    return (
-        <mesh position={[0, 1.492, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <planeGeometry args={[0.62, 0.62]} />
-            <meshStandardMaterial
-                map={logoTexture}
-                transparent
-                roughness={0.32}
-                metalness={0.05}
-                polygonOffset
-                polygonOffsetFactor={-1}
-            />
-        </mesh>
-    );
 }
 
 function CubexFace({ blink, smile }: { blink: number; smile: number }) {
@@ -604,7 +553,6 @@ export function RubiksCube() {
                                 ))}
                             </group>
                         )}
-                        <CubexLogo />
                     </group>
 
                     <group ref={friendRigRef}>

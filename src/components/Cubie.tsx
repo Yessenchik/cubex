@@ -21,8 +21,53 @@ const stickerFaces: Record<FaceName, { position: [number, number, number]; rotat
 
 const faceOrder: FaceName[] = ['right', 'left', 'top', 'bottom', 'front', 'back'];
 
+function createLogoTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+        return new THREE.CanvasTexture(canvas);
+    }
+
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#111827';
+    context.beginPath();
+    context.roundRect(72, 72, 368, 368, 96);
+    context.fill();
+
+    context.strokeStyle = '#7DD3FC';
+    context.lineWidth = 18;
+    context.stroke();
+
+    context.fillStyle = '#F8FAFC';
+    context.font = '800 138px Arial';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText('CX', 256, 266);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+
+    return texture;
+}
+
+const getLogoPosition = (position: [number, number, number]) => (
+    position.map((coordinate) => coordinate * 1.014) as [number, number, number]
+);
+
 export function Cubie({ piece, palette, onPointerDown, onPointerUp }: CubieProps) {
     const { stickers } = piece;
+    const logoTexture = useMemo(() => createLogoTexture(), []);
+    const logoMaterial = useMemo(() => new THREE.MeshBasicMaterial({
+        map: logoTexture,
+        transparent: true,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+    }), [logoTexture]);
     const bodyMaterial = useMemo(() => new THREE.MeshStandardMaterial({
         color: palette.inside,
         roughness: 0.38,
@@ -62,11 +107,20 @@ export function Cubie({ piece, palette, onPointerDown, onPointerUp }: CubieProps
                 if (!material) return null;
 
                 const { position, rotation } = stickerFaces[face];
+                const showLogo = piece.type === 'center' && stickers[face] === 'top';
 
                 return (
-                    <mesh key={face} position={position} rotation={rotation} material={material}>
-                        <planeGeometry args={[0.74, 0.74]} />
-                    </mesh>
+                    <group key={face}>
+                        <mesh position={position} rotation={rotation} material={material}>
+                            <planeGeometry args={[0.74, 0.74]} />
+                        </mesh>
+
+                        {showLogo && (
+                            <mesh position={getLogoPosition(position)} rotation={rotation} material={logoMaterial}>
+                                <planeGeometry args={[0.42, 0.42]} />
+                            </mesh>
+                        )}
+                    </group>
                 );
             })}
         </group>

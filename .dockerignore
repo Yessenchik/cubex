@@ -1,0 +1,10 @@
+node_modules
+dist
+.vite
+.tsbuildinfo
+.git
+.DS_Store
+*.log
+npm-debug.log*
+Dockerfile
+docker-compose.yml

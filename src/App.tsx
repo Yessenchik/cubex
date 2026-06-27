@@ -1,4 +1,4 @@
-import { Suspense, useState, type FormEvent } from 'react';
+import { Suspense, useEffect, useState, type FormEvent } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { ContactShadows, Environment } from '@react-three/drei';
 import { RubiksCube } from './components/RubiksCube';
@@ -46,6 +46,26 @@ const guides = [
     },
 ] satisfies Array<{ name: GuideName; detail: string; steps: string[]; sample: string }>;
 
+function CubexLoader() {
+    const stickers = ['top', 'front', 'right', 'left', 'bottom', 'back', 'front', 'right', 'top'];
+
+    return (
+        <div className="loader-screen" role="status" aria-live="polite" aria-label="Loading Cubex">
+            <div className="loader-card">
+                <div className="loader-mini-cube" aria-hidden="true">
+                    {stickers.map((sticker, index) => (
+                        <span key={`${sticker}-${index}`} className={`loader-sticker loader-sticker-${sticker}`} />
+                    ))}
+                </div>
+                <div className="loader-copy">
+                    <strong>Cubex</strong>
+                    <span>mixing tiny stickers...</span>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function AppShell() {
     const appMode = useCubeStore((state) => state.appMode);
     const viewMode = useCubeStore((state) => state.viewMode);
@@ -68,7 +88,16 @@ function AppShell() {
     const setFaceColor = useCubeStore((state) => state.setFaceColor);
     const applyPreset = useCubeStore((state) => state.applyPreset);
     const [chatText, setChatText] = useState('');
+    const [isLoading, setIsLoading] = useState(true);
     const selectedGuide = guides.find((guide) => guide.name === activeGuide) ?? guides[0];
+
+    useEffect(() => {
+        const loaderTimer = window.setTimeout(() => {
+            setIsLoading(false);
+        }, 1100);
+
+        return () => window.clearTimeout(loaderTimer);
+    }, []);
 
     const handleChatSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -78,6 +107,10 @@ function AppShell() {
         speakToCubex(chatText);
         setChatText('');
     };
+
+    if (isLoading) {
+        return <CubexLoader />;
+    }
 
     return (
         <main className="app">

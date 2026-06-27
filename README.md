@@ -16,6 +16,7 @@ The goal is not only to render a Rubik's-style cube. Cubex has two product direc
 - Manual move controls for `U`, `D`, `R`, `L`, `F`, and `B` turns.
 - Mix cube and reset to solved state.
 - Move history.
+- Mini Cubex loading screen with scrambling cube animation.
 - Quick solving guide tabs:
   - CFOP / Fridrich
   - ZBLL
@@ -85,6 +86,29 @@ Preview the production build:
 npm run preview
 ```
 
+## Docker
+
+Build and run Cubex with Docker:
+
+```bash
+docker build -t cubex .
+docker run --rm -p 8080:80 cubex
+```
+
+Open:
+
+```text
+http://localhost:8080
+```
+
+Or use Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+The production container builds the Vite app with Node and serves the static files through Nginx.
+
 ## Project Structure
 
 ```text
@@ -96,6 +120,9 @@ src/
   store/
     useCubeStore.ts          Cube state, modes, moves, presets, chat/action state
   index.css                  App layout and UI styles
+Dockerfile                   Production Docker build
+nginx.conf                   Static SPA server config
+docker-compose.yml           Local Docker run config
 ```
 
 ## Notes

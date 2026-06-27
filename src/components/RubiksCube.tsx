@@ -45,7 +45,7 @@ function CubexLogo() {
     const logoTexture = useMemo(() => createLogoTexture(), []);
 
     return (
-        <mesh position={[0, 1.486, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh position={[0, 1.492, 0]} rotation={[-Math.PI / 2, 0, 0]}>
             <planeGeometry args={[0.62, 0.62]} />
             <meshStandardMaterial
                 map={logoTexture}

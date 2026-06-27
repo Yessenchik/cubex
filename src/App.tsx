@@ -54,6 +54,7 @@ function AppShell() {
     const dialogue = useCubeStore((state) => state.dialogue);
     const moveHistory = useCubeStore((state) => state.moveHistory);
     const activeGuide = useCubeStore((state) => state.activeGuide);
+    const isMixing = useCubeStore((state) => state.isMixing);
     const palette = useCubeStore((state) => state.palette);
     const setAppMode = useCubeStore((state) => state.setAppMode);
     const toggleViewMode = useCubeStore((state) => state.toggleViewMode);
@@ -131,7 +132,9 @@ function AppShell() {
                             </div>
 
                             <div className="primary-actions">
-                                <button onClick={scrambleCube}>Mix cube</button>
+                                <button onClick={scrambleCube} disabled={isMixing}>
+                                    {isMixing ? 'Mixing...' : 'Mix cube'}
+                                </button>
                                 <button onClick={resetCube}>Solved state</button>
                             </div>
 

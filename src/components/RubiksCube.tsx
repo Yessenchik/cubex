@@ -144,7 +144,17 @@ function CubexLimbs({
     );
 }
 
-function CubexDialogue({ text, isTyping, visible }: { text: string; isTyping: boolean; visible: boolean }) {
+function CubexDialogue({
+    text,
+    isTyping,
+    visible,
+    variant = 'normal',
+}: {
+    text: string;
+    isTyping: boolean;
+    visible: boolean;
+    variant?: 'normal' | 'handoff';
+}) {
     const [typingState, setTypingState] = useState({ source: text, visibleText: text });
     const typedText = typingState.source === text ? typingState.visibleText : '';
 
@@ -166,7 +176,7 @@ function CubexDialogue({ text, isTyping, visible }: { text: string; isTyping: bo
 
     return (
         <Html position={[0, 2.2, 1.75]} center distanceFactor={7} style={{ width: '260px', pointerEvents: 'none' }}>
-            <div className="scene-dialogue">
+            <div className={`scene-dialogue scene-dialogue-${variant}`}>
                 <span>{typedText || ' '}</span>
                 {(isTyping || typedText.length < text.length) && <i />}
             </div>
@@ -224,8 +234,30 @@ export function RubiksCube() {
     const rightLegRef = useRef<THREE.Group>(null);
     const targetQuaternion = useRef(new THREE.Quaternion().copy(DEFAULT_FIXED_QUATERNION));
     const friendPresenceRef = useRef(1);
+    const previousAppModeRef = useRef(appMode);
     const [faceMotion, setFaceMotion] = useState({ blink: 1, smile: 0.5 });
     const [friendPresence, setFriendPresence] = useState(1);
+    const [handoffBubble, setHandoffBubble] = useState<{ text: string; key: number } | null>(null);
+
+    useEffect(() => {
+        const previousMode = previousAppModeRef.current;
+
+        if (previousMode !== 'play' && appMode === 'play') {
+            setHandoffBubble({
+                text: 'Okay, toy mode off. I will become your clean trainer cube.',
+                key: Date.now(),
+            });
+
+            const handoffTimer = window.setTimeout(() => {
+                setHandoffBubble(null);
+            }, 1500);
+
+            previousAppModeRef.current = appMode;
+            return () => window.clearTimeout(handoffTimer);
+        }
+
+        previousAppModeRef.current = appMode;
+    }, [appMode]);
 
     useEffect(() => {
         if (viewMode === 'fixed' || isFriendMode) {
@@ -414,6 +446,15 @@ export function RubiksCube() {
                                 text={dialogue}
                                 isTyping={action === 'thinking' || action === 'talking'}
                                 visible={friendPresence > 0.04}
+                            />
+                        )}
+                        {handoffBubble && (
+                            <CubexDialogue
+                                key={handoffBubble.key}
+                                text={handoffBubble.text}
+                                isTyping
+                                visible
+                                variant="handoff"
                             />
                         )}
                         <CubexFace blink={faceMotion.blink} smile={faceMotion.smile} />

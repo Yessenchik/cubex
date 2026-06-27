@@ -17,7 +17,11 @@ const modes: AppMode[] = ['friend', 'customize', 'play'];
 const friendActions: CubexAction[] = ['wave', 'jump', 'spin', 'thinking', 'talking', 'idle'];
 const moods: CubexMood[] = ['curious', 'happy', 'excited', 'sleepy'];
 const faces: FaceName[] = ['top', 'front', 'right', 'left', 'back', 'bottom'];
-const moves: CubeMove[] = ['U', "U'", 'D', "D'", 'R', "R'", 'L', "L'", 'F', "F'", 'B', "B'"];
+const moves: CubeMove[] = [
+    'U', "U'", 'D', "D'", 'R', "R'",
+    'L', "L'", 'F', "F'", 'B', "B'",
+    'M', "M'", 'E', "E'", 'S', "S'",
+];
 
 const guides = [
     {
@@ -171,7 +175,7 @@ function AppShell() {
                                 <button onClick={resetCube}>Solved state</button>
                             </div>
 
-                            <p className="hint-line">Drag a cube layer with the mouse, or tap a move below.</p>
+                            <p className="hint-line">Drag a visible face to turn it, or tap a move below.</p>
 
                             <div className="move-grid">
                                 {moves.map((move) => (

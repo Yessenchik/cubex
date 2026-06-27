@@ -4,7 +4,16 @@ export type PieceType = 'center' | 'edge' | 'corner';
 export type AppMode = 'friend' | 'customize' | 'play';
 export type CubexMood = 'curious' | 'happy' | 'excited' | 'sleepy';
 export type CubexAction = 'idle' | 'wave' | 'jump' | 'spin' | 'thinking' | 'talking';
-export type CubeMove = 'U' | "U'" | 'D' | "D'" | 'R' | "R'" | 'L' | "L'" | 'F' | "F'" | 'B' | "B'";
+export type CubeMove =
+    | 'U' | "U'"
+    | 'D' | "D'"
+    | 'R' | "R'"
+    | 'L' | "L'"
+    | 'F' | "F'"
+    | 'B' | "B'"
+    | 'M' | "M'"
+    | 'E' | "E'"
+    | 'S' | "S'";
 export type GuideName = 'CFOP / Fridrich' | 'ZBLL' | 'OLL' | 'PLL';
 
 export type FaceName = 'right' | 'left' | 'top' | 'bottom' | 'front' | 'back';
@@ -99,6 +108,7 @@ interface CubeState {
     message: string;
     dialogue: string;
     moveHistory: CubeMove[];
+    moveQueue: CubeMove[];
     activeGuide: GuideName;
     isMixing: boolean;
     palette: CubePalette;
@@ -108,6 +118,8 @@ interface CubeState {
     setAction: (action: CubexAction) => void;
     speakToCubex: (text: string) => void;
     applyMove: (move: CubeMove) => void;
+    popNextMove: () => CubeMove | undefined;
+    commitMove: (move: CubeMove) => void;
     scrambleCube: () => void;
     resetCube: () => void;
     setActiveGuide: (guide: GuideName) => void;
@@ -179,7 +191,7 @@ const rotateStickers = (
     return nextStickers;
 };
 
-const moveDefinitions: Record<CubeMove, { axis: 'x' | 'y' | 'z'; layer: number; turns: number }> = {
+export const cubeMoveDefinitions: Record<CubeMove, { axis: 'x' | 'y' | 'z'; layer: number; turns: number }> = {
     U: { axis: 'y', layer: 1, turns: 1 },
     "U'": { axis: 'y', layer: 1, turns: -1 },
     D: { axis: 'y', layer: -1, turns: -1 },
@@ -192,10 +204,16 @@ const moveDefinitions: Record<CubeMove, { axis: 'x' | 'y' | 'z'; layer: number; 
     "F'": { axis: 'z', layer: 1, turns: 1 },
     B: { axis: 'z', layer: -1, turns: 1 },
     "B'": { axis: 'z', layer: -1, turns: -1 },
+    M: { axis: 'x', layer: 0, turns: -1 },
+    "M'": { axis: 'x', layer: 0, turns: 1 },
+    E: { axis: 'y', layer: 0, turns: -1 },
+    "E'": { axis: 'y', layer: 0, turns: 1 },
+    S: { axis: 'z', layer: 0, turns: -1 },
+    "S'": { axis: 'z', layer: 0, turns: 1 },
 };
 
 const applyMoveToPieces = (pieces: Piece[], move: CubeMove) => {
-    const definition = moveDefinitions[move];
+    const definition = cubeMoveDefinitions[move];
 
     return pieces.map((piece) => {
         const axisIndex = definition.axis === 'x' ? 0 : definition.axis === 'y' ? 1 : 2;
@@ -212,15 +230,15 @@ const applyMoveToPieces = (pieces: Piece[], move: CubeMove) => {
     });
 };
 
-const allMoves = Object.keys(moveDefinitions) as CubeMove[];
-const moveAxis = (move: CubeMove) => moveDefinitions[move].axis;
-let activeMixRun = 0;
+const scrambleMoves = (Object.keys(cubeMoveDefinitions) as CubeMove[])
+    .filter((move) => cubeMoveDefinitions[move].layer !== 0);
+const moveAxis = (move: CubeMove) => cubeMoveDefinitions[move].axis;
 
 const generateScramble = (length: number) => {
     const scramble: CubeMove[] = [];
 
     while (scramble.length < length) {
-        const nextMove = allMoves[Math.floor(Math.random() * allMoves.length)];
+        const nextMove = scrambleMoves[Math.floor(Math.random() * scrambleMoves.length)];
         const previousMove = scramble[scramble.length - 1];
 
         if (previousMove && moveAxis(previousMove) === moveAxis(nextMove)) {
@@ -242,6 +260,7 @@ export const useCubeStore = create<CubeState>()((set, get) => ({
     message: "Hi, I'm Cubex. I am learning how to feel alive.",
     dialogue: 'Say something to Cubex.',
     moveHistory: [],
+    moveQueue: [],
     activeGuide: 'CFOP / Fridrich',
     isMixing: false,
     palette: cubePresets.classic,
@@ -315,44 +334,51 @@ export const useCubeStore = create<CubeState>()((set, get) => ({
         };
     }),
     applyMove: (move) => set((state) => ({
-        pieces: applyMoveToPieces(state.pieces, move),
-        moveHistory: [...state.moveHistory, move].slice(-40),
-        message: `${move} applied.`,
+        moveQueue: [...state.moveQueue, move],
+        message: state.moveQueue.length ? `${move} queued.` : `${move} ready.`,
         dialogue: `Move ${move}. Keep going or use a guide.`,
     })),
+    popNextMove: () => {
+        const nextMove = get().moveQueue[0];
+
+        if (!nextMove) return undefined;
+
+        set((state) => ({
+            moveQueue: state.moveQueue.slice(1),
+        }));
+
+        return nextMove;
+    },
+    commitMove: (move) => set((state) => {
+        const hasQueuedMoves = state.moveQueue.length > 0;
+
+        return {
+            pieces: applyMoveToPieces(state.pieces, move),
+            moveHistory: [...state.moveHistory, move].slice(-40),
+            message: state.isMixing
+                ? hasQueuedMoves ? `Mixing: ${move}` : 'Mix complete.'
+                : `${move} applied.`,
+            dialogue: state.isMixing ? state.dialogue : `Move ${move}. Keep going or use a guide.`,
+            isMixing: state.isMixing && hasQueuedMoves,
+        };
+    }),
     scrambleCube: () => {
         if (get().isMixing) return;
 
-        activeMixRun += 1;
-        const mixRun = activeMixRun;
         const scramble = generateScramble(20);
 
-        set({
+        set((state) => ({
+            moveQueue: [...state.moveQueue, ...scramble],
             isMixing: true,
             message: `Mixing: ${scramble.join(' ')}`,
             dialogue: scramble.join(' '),
-        });
-
-        scramble.forEach((move, index) => {
-            window.setTimeout(() => {
-                if (mixRun !== activeMixRun) return;
-
-                set((state) => ({
-                    pieces: applyMoveToPieces(state.pieces, move),
-                    moveHistory: [...state.moveHistory, move].slice(-40),
-                    message: index === scramble.length - 1 ? 'Mix complete.' : `Mixing: ${move}`,
-                    dialogue: scramble.join(' '),
-                    isMixing: index !== scramble.length - 1,
-                }));
-            }, index * 170);
-        });
+        }));
     },
     resetCube: () => set(() => {
-        activeMixRun += 1;
-
         return {
             pieces: generateInitialCube(),
             moveHistory: [],
+            moveQueue: [],
             isMixing: false,
             message: 'Cube reset.',
             dialogue: 'Solved state restored.',

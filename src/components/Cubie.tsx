@@ -1,7 +1,7 @@
 import type { CubePalette, FaceName, Piece } from '../store/useCubeStore';
-import { useFrame, type ThreeEvent } from '@react-three/fiber';
+import { type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
-import { useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 
 interface CubieProps {
     piece: Piece;
@@ -23,9 +23,6 @@ const faceOrder: FaceName[] = ['right', 'left', 'top', 'bottom', 'front', 'back'
 
 export function Cubie({ piece, palette, onPointerDown, onPointerUp }: CubieProps) {
     const { stickers } = piece;
-    const groupRef = useRef<THREE.Group>(null);
-    const hasInitializedPosition = useRef(false);
-    const targetPosition = useMemo(() => new THREE.Vector3(...piece.currentPosition), [piece.currentPosition]);
     const bodyMaterial = useMemo(() => new THREE.MeshStandardMaterial({
         color: palette.inside,
         roughness: 0.38,
@@ -39,6 +36,7 @@ export function Cubie({ piece, palette, onPointerDown, onPointerUp }: CubieProps
             if (stickerColor) {
                 materials[face] = new THREE.MeshBasicMaterial({
                     color: palette[stickerColor],
+                    side: THREE.DoubleSide,
                     polygonOffset: true,
                     polygonOffsetFactor: -1,
                 });
@@ -48,25 +46,9 @@ export function Cubie({ piece, palette, onPointerDown, onPointerUp }: CubieProps
         }, {});
     }, [palette, stickers]);
 
-    useFrame(() => {
-        if (!groupRef.current) return;
-
-        if (!hasInitializedPosition.current) {
-            groupRef.current.position.copy(targetPosition);
-            hasInitializedPosition.current = true;
-            return;
-        }
-
-        groupRef.current.position.lerp(targetPosition, 0.24);
-
-        if (groupRef.current.position.distanceTo(targetPosition) < 0.005) {
-            groupRef.current.position.copy(targetPosition);
-        }
-    });
-
     return (
         <group
-            ref={groupRef}
+            position={piece.currentPosition}
             onPointerDown={(event) => onPointerDown?.(piece, event)}
             onPointerUp={(event) => onPointerUp?.(piece, event)}
         >

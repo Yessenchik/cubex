@@ -3,10 +3,29 @@ import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { Cubie } from './Cubie';
-import { type CubeMove, type Piece, useCubeStore } from '../store/useCubeStore';
+import { cubeMoveDefinitions, type CubeMove, type Piece, useCubeStore } from '../store/useCubeStore';
 
 const DEFAULT_FIXED_QUATERNION = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0));
-const DRAG_THRESHOLD = 34;
+const DRAG_THRESHOLD = 0.22;
+const TURN_DURATION = 0.32;
+
+type Axis = 'x' | 'y' | 'z';
+
+interface ActiveLayerTurn {
+    move: CubeMove;
+    axis: Axis;
+    turns: number;
+    affectedIds: Set<number>;
+    pieces: Piece[];
+    elapsed: number;
+    isCommitting?: boolean;
+}
+
+interface DragStartInfo {
+    piece: Piece;
+    point: THREE.Vector3;
+    normal: THREE.Vector3;
+}
 
 function createLogoTexture() {
     const canvas = document.createElement('canvas');
@@ -184,34 +203,74 @@ function CubexDialogue({
     );
 }
 
+const dominantAxis = (vector: THREE.Vector3): Axis => {
+    const absolute = {
+        x: Math.abs(vector.x),
+        y: Math.abs(vector.y),
+        z: Math.abs(vector.z),
+    };
+
+    if (absolute.x >= absolute.y && absolute.x >= absolute.z) return 'x';
+    if (absolute.y >= absolute.z) return 'y';
+    return 'z';
+};
+
+const axisIndex: Record<Axis, 0 | 1 | 2> = {
+    x: 0,
+    y: 1,
+    z: 2,
+};
+
+const axisVector = (axis: Axis, sign: number) => {
+    const vector = new THREE.Vector3();
+    vector[axis] = sign;
+    return vector;
+};
+
+const getMoveForLayerTurn = (axis: Axis, layer: number, turns: number): CubeMove | null => {
+    const normalizedTurns = turns >= 0 ? 1 : -1;
+    const match = Object.entries(cubeMoveDefinitions).find(([, definition]) => (
+        definition.axis === axis
+        && definition.layer === layer
+        && definition.turns === normalizedTurns
+    ));
+
+    return match ? match[0] as CubeMove : null;
+};
+
 const inferMoveFromDrag = (
     piece: Piece,
-    start: { x: number; y: number },
-    end: { x: number; y: number }
+    startNormal: THREE.Vector3,
+    startPoint: THREE.Vector3,
+    endPoint: THREE.Vector3
 ): CubeMove | null => {
-    const deltaX = end.x - start.x;
-    const deltaY = end.y - start.y;
+    const dragVector = endPoint.clone().sub(startPoint);
+    const faceAxis = dominantAxis(startNormal);
+    const faceSign = startNormal[faceAxis] >= 0 ? 1 : -1;
 
-    if (Math.hypot(deltaX, deltaY) < DRAG_THRESHOLD) {
+    dragVector[faceAxis] = 0;
+
+    if (dragVector.length() < DRAG_THRESHOLD) {
         return null;
     }
 
-    const [x, y, z] = piece.currentPosition;
+    const dragAxis = dominantAxis(dragVector);
+    const dragSign = dragVector[dragAxis] >= 0 ? 1 : -1;
+    const turnVector = axisVector(faceAxis, faceSign).cross(axisVector(dragAxis, dragSign));
+    const turnAxis = dominantAxis(turnVector);
+    const turnSign = turnVector[turnAxis] >= 0 ? 1 : -1;
+    const layer = piece.currentPosition[axisIndex[turnAxis]];
 
-    if (Math.abs(deltaX) > Math.abs(deltaY)) {
-        if (y === 1) return deltaX > 0 ? 'U' : "U'";
-        if (y === -1) return deltaX > 0 ? "D'" : 'D';
-        if (z === 1) return deltaX > 0 ? 'U' : "U'";
-        if (z === -1) return deltaX > 0 ? "U'" : 'U';
-    }
-
-    if (x === 1) return deltaY > 0 ? "R'" : 'R';
-    if (x === -1) return deltaY > 0 ? 'L' : "L'";
-    if (z === 1) return deltaY > 0 ? "F'" : 'F';
-    if (z === -1) return deltaY > 0 ? 'B' : "B'";
-
-    return null;
+    return getMoveForLayerTurn(turnAxis, layer, turnSign);
 };
+
+const getLayerCoordinate = (piece: Piece, axis: Axis) => {
+    if (axis === 'x') return piece.currentPosition[0];
+    if (axis === 'y') return piece.currentPosition[1];
+    return piece.currentPosition[2];
+};
+
+const easeTurn = (progress: number) => 1 - Math.pow(1 - progress, 3);
 
 export function RubiksCube() {
     const pieces = useCubeStore((state) => state.pieces);
@@ -223,10 +282,13 @@ export function RubiksCube() {
     const dialogue = useCubeStore((state) => state.dialogue);
     const setAction = useCubeStore((state) => state.setAction);
     const applyMove = useCubeStore((state) => state.applyMove);
+    const popNextMove = useCubeStore((state) => state.popNextMove);
+    const commitMove = useCubeStore((state) => state.commitMove);
     const isFriendMode = appMode !== 'play';
 
     const groupRef = useRef<THREE.Group>(null);
     const avatarRef = useRef<THREE.Group>(null);
+    const animatedLayerRef = useRef<THREE.Group>(null);
     const friendRigRef = useRef<THREE.Group>(null);
     const leftArmRef = useRef<THREE.Group>(null);
     const rightArmRef = useRef<THREE.Group>(null);
@@ -235,9 +297,18 @@ export function RubiksCube() {
     const targetQuaternion = useRef(new THREE.Quaternion().copy(DEFAULT_FIXED_QUATERNION));
     const friendPresenceRef = useRef(1);
     const previousAppModeRef = useRef(appMode);
+    const piecesRef = useRef(pieces);
+    const activeTurnRef = useRef<ActiveLayerTurn | null>(null);
     const [faceMotion, setFaceMotion] = useState({ blink: 1, smile: 0.5 });
     const [friendPresence, setFriendPresence] = useState(1);
     const [handoffBubble, setHandoffBubble] = useState<{ text: string; key: number } | null>(null);
+    const [activeTurn, setActiveTurn] = useState<ActiveLayerTurn | null>(null);
+    const staticPieces = activeTurn ? pieces.filter((piece) => !activeTurn.affectedIds.has(piece.id)) : pieces;
+    const turningPieces = activeTurn?.pieces ?? [];
+
+    useEffect(() => {
+        piecesRef.current = pieces;
+    }, [pieces]);
 
     useEffect(() => {
         const previousMode = previousAppModeRef.current;
@@ -265,9 +336,55 @@ export function RubiksCube() {
         }
     }, [isFriendMode, viewMode]);
 
-    const dragStartInfo = useRef<{ piece: Piece; pointer: { x: number; y: number } } | null>(null);
+    const dragStartInfo = useRef<DragStartInfo | null>(null);
 
-    const handlePiecePointerDown = (piece: Piece, e: ThreeEvent<PointerEvent>) => {
+    const startQueuedMove = (move: CubeMove) => {
+        const definition = cubeMoveDefinitions[move];
+        const affectedPieces = piecesRef.current
+            .filter((piece) => getLayerCoordinate(piece, definition.axis) === definition.layer)
+            .map((piece) => ({
+                ...piece,
+                currentPosition: [...piece.currentPosition] as Piece['currentPosition'],
+                initialPosition: [...piece.initialPosition] as Piece['initialPosition'],
+                stickers: { ...piece.stickers },
+            }));
+        const affectedIds = new Set(affectedPieces.map((piece) => piece.id));
+
+        const turn: ActiveLayerTurn = {
+            move,
+            axis: definition.axis,
+            turns: definition.turns,
+            affectedIds,
+            pieces: affectedPieces,
+            elapsed: 0,
+        };
+
+        activeTurnRef.current = turn;
+        setActiveTurn(turn);
+
+        if (animatedLayerRef.current) {
+            animatedLayerRef.current.rotation.set(0, 0, 0);
+        }
+    };
+
+    const getPointerNormal = (event: ThreeEvent<PointerEvent>) => {
+        const normal = event.face?.normal.clone() ?? new THREE.Vector3(0, 1, 0);
+        normal.transformDirection(event.object.matrixWorld).normalize();
+
+        if (avatarRef.current) {
+            const avatarQuaternion = avatarRef.current.getWorldQuaternion(new THREE.Quaternion()).invert();
+            normal.applyQuaternion(avatarQuaternion).normalize();
+        }
+
+        return normal;
+    };
+
+    const getPointerPoint = (event: ThreeEvent<PointerEvent>) => {
+        const point = event.point.clone();
+        return avatarRef.current ? avatarRef.current.worldToLocal(point) : point;
+    };
+
+    const handlePiecePointerDown = (_piece: Piece, e: ThreeEvent<PointerEvent>) => {
         e.stopPropagation();
 
         if (isFriendMode) {
@@ -275,8 +392,9 @@ export function RubiksCube() {
         }
 
         dragStartInfo.current = {
-            piece,
-            pointer: { x: e.clientX, y: e.clientY },
+            piece: _piece,
+            point: getPointerPoint(e),
+            normal: getPointerNormal(e),
         };
     };
 
@@ -285,10 +403,12 @@ export function RubiksCube() {
         if (!dragStartInfo.current) return;
 
         if (appMode === 'play') {
-            const move = inferMoveFromDrag(dragStartInfo.current.piece, dragStartInfo.current.pointer, {
-                x: e.clientX,
-                y: e.clientY,
-            });
+            const move = inferMoveFromDrag(
+                dragStartInfo.current.piece,
+                dragStartInfo.current.normal,
+                dragStartInfo.current.point,
+                getPointerPoint(e)
+            );
 
             if (move) {
                 applyMove(move);
@@ -346,7 +466,7 @@ export function RubiksCube() {
         isDraggingGlobal.current = false;
     };
 
-    useFrame(({ clock }) => {
+    useFrame(({ clock }, delta) => {
         const elapsed = clock.getElapsedTime();
         const jump = action === 'jump' ? Math.max(0, Math.sin(elapsed * 7)) * 0.58 : 0;
         const spin = action === 'spin' ? Math.sin(elapsed * 2.8) * 0.55 : Math.sin(elapsed * 0.8) * 0.025;
@@ -361,6 +481,40 @@ export function RubiksCube() {
 
         if (groupRef.current) {
             groupRef.current.quaternion.slerp(targetQuaternion.current, 0.1);
+        }
+
+        if (!activeTurnRef.current) {
+            const nextMove = popNextMove();
+
+            if (nextMove) {
+                startQueuedMove(nextMove);
+            }
+        }
+
+        if (activeTurnRef.current && animatedLayerRef.current) {
+            const turn = activeTurnRef.current;
+            turn.elapsed += delta;
+            const progress = Math.min(turn.elapsed / TURN_DURATION, 1);
+            const angle = easeTurn(progress) * turn.turns * Math.PI / 2;
+
+            animatedLayerRef.current.rotation.set(0, 0, 0);
+            animatedLayerRef.current.rotation[turn.axis] = angle;
+
+            if (progress >= 1 && !turn.isCommitting) {
+                turn.isCommitting = true;
+                animatedLayerRef.current.rotation.set(0, 0, 0);
+                animatedLayerRef.current.rotation[turn.axis] = turn.turns * Math.PI / 2;
+                commitMove(turn.move);
+
+                window.requestAnimationFrame(() => {
+                    if (animatedLayerRef.current) {
+                        animatedLayerRef.current.rotation.set(0, 0, 0);
+                    }
+
+                    activeTurnRef.current = null;
+                    setActiveTurn(null);
+                });
+            }
         }
 
         if (avatarRef.current) {
@@ -428,7 +582,7 @@ export function RubiksCube() {
             <group ref={groupRef}>
                 <group ref={avatarRef}>
                     <group>
-                        {pieces.map((piece) => (
+                        {staticPieces.map((piece) => (
                             <Cubie
                                 key={piece.id}
                                 piece={piece}
@@ -437,6 +591,19 @@ export function RubiksCube() {
                                 onPointerUp={handlePiecePointerUp}
                             />
                         ))}
+                        {activeTurn && (
+                            <group ref={animatedLayerRef}>
+                                {turningPieces.map((piece) => (
+                                    <Cubie
+                                        key={piece.id}
+                                        piece={piece}
+                                        palette={palette}
+                                        onPointerDown={handlePiecePointerDown}
+                                        onPointerUp={handlePiecePointerUp}
+                                    />
+                                ))}
+                            </group>
+                        )}
                         <CubexLogo />
                     </group>
 

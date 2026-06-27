@@ -47,8 +47,9 @@ button {
 }
 
 .loader-screen {
-  position: relative;
-  z-index: 1;
+  position: fixed;
+  inset: 0;
+  z-index: 20;
   display: grid;
   place-items: center;
   width: 100vw;

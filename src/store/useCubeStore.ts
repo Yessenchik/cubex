@@ -1,103 +1,28 @@
 import { create } from 'zustand';
+import { applyMoveToPieces, cubePresets, generateInitialCube, generateScramble } from './cubeModel';
+import type {
+    AppMode,
+    CubeMove,
+    CubePalette,
+    CubexAction,
+    CubexMood,
+    FaceName,
+    GuideName,
+    Piece,
+} from '../types/cube';
 
-export type PieceType = 'center' | 'edge' | 'corner';
-export type AppMode = 'friend' | 'customize' | 'play';
-export type CubexMood = 'curious' | 'happy' | 'excited' | 'sleepy';
-export type CubexAction = 'idle' | 'wave' | 'jump' | 'spin' | 'thinking' | 'talking';
-export type CubeMove =
-    | 'U' | "U'"
-    | 'D' | "D'"
-    | 'R' | "R'"
-    | 'L' | "L'"
-    | 'F' | "F'"
-    | 'B' | "B'"
-    | 'M' | "M'"
-    | 'E' | "E'"
-    | 'S' | "S'";
-export type GuideName = 'CFOP / Fridrich' | 'ZBLL' | 'OLL' | 'PLL';
-
-export type FaceName = 'right' | 'left' | 'top' | 'bottom' | 'front' | 'back';
-
-export interface CubePalette {
-    right: string;
-    left: string;
-    top: string;
-    bottom: string;
-    front: string;
-    back: string;
-    inside: string;
-}
-
-export interface Piece {
-    id: number;
-    type: PieceType;
-    initialPosition: [number, number, number];
-    currentPosition: [number, number, number];
-    stickers: Partial<Record<FaceName, FaceName>>;
-}
-
-export const cubePresets: Record<string, CubePalette> = {
-    classic: {
-        right: '#D72638',
-        left: '#FF8A00',
-        top: '#F8FAFC',
-        bottom: '#FFD166',
-        front: '#00A86B',
-        back: '#2F6BFF',
-        inside: '#16181F',
-    },
-    midnight: {
-        right: '#FF4D6D',
-        left: '#F77F00',
-        top: '#E6EDF7',
-        bottom: '#FFE45E',
-        front: '#4ADE80',
-        back: '#38BDF8',
-        inside: '#0A0D14',
-    },
-    candy: {
-        right: '#FF6B9A',
-        left: '#FFB86B',
-        top: '#FFF9F0',
-        bottom: '#FFE66D',
-        front: '#79E7C7',
-        back: '#8EA7FF',
-        inside: '#23212B',
-    },
-};
-
-const generateInitialCube = (): Piece[] => {
-    const pieces: Piece[] = [];
-    let id = 0;
-
-    for (const x of [-1, 0, 1]) {
-        for (const y of [-1, 0, 1]) {
-            for (const z of [-1, 0, 1]) {
-
-                if (x === 0 && y === 0 && z === 0) continue;
-
-                const zeroes = [x, y, z].filter(val => val === 0).length;
-                const type: PieceType = zeroes === 2 ? 'center' : zeroes === 1 ? 'edge' : 'corner';
-
-                pieces.push({
-                    id: id++,
-                    type,
-                    initialPosition: [x, y, z],
-                    currentPosition: [x, y, z],
-                    stickers: {
-                        ...(x === 1 ? { right: 'right' as const } : {}),
-                        ...(x === -1 ? { left: 'left' as const } : {}),
-                        ...(y === 1 ? { top: 'top' as const } : {}),
-                        ...(y === -1 ? { bottom: 'bottom' as const } : {}),
-                        ...(z === 1 ? { front: 'front' as const } : {}),
-                        ...(z === -1 ? { back: 'back' as const } : {}),
-                    }
-                });
-            }
-        }
-    }
-    return pieces;
-};
+export { cubeMoveDefinitions, cubePresets } from './cubeModel';
+export type {
+    AppMode,
+    CubeMove,
+    CubePalette,
+    CubexAction,
+    CubexMood,
+    FaceName,
+    GuideName,
+    Piece,
+    PieceType,
+} from '../types/cube';
 
 interface CubeState {
     pieces: Piece[];
@@ -127,128 +52,48 @@ interface CubeState {
     applyPreset: (presetName: keyof typeof cubePresets) => void;
 }
 
-const rotatePosition = (position: [number, number, number], axis: 'x' | 'y' | 'z', turns: number): [number, number, number] => {
-    const [x, y, z] = position;
-    const normalizedTurns = ((turns % 4) + 4) % 4;
+const modeMessages: Record<AppMode, string> = {
+    friend: 'Friend mode. I can talk, react, and be a toy.',
+    customize: 'Give me a new look. I promise to wear it with confidence.',
+    play: 'Play mode. Clean cube only: train, scramble, solve.',
+};
 
-    if (normalizedTurns === 0) return position;
+const moodMessages: Record<CubexMood, string> = {
+    curious: 'I am curious what you will build next.',
+    happy: 'That look suits me.',
+    excited: 'Okay, now I feel electric.',
+    sleepy: 'Soft mode activated. Tiny rest, big dreams.',
+};
 
-    if (axis === 'x') {
-        return normalizedTurns === 1
-            ? [x, -z, y]
-            : normalizedTurns === 2
-                ? [x, -y, -z]
-                : [x, z, -y];
+const actionMessages: Record<CubexAction, string> = {
+    idle: 'Just vibing in cube form.',
+    wave: 'Hey, creator.',
+    jump: 'I have legs now. This is important.',
+    spin: 'Maximum cube confidence.',
+    thinking: 'Hmm. Let me think in tiny cube squares.',
+    talking: 'I am typing my thoughts above my head.',
+};
+
+const getCubexReply = (text: string) => {
+    const normalizedText = text.trim().toLowerCase();
+
+    if (normalizedText.includes('hello') || normalizedText.includes('hi')) {
+        return 'Hi. I was waiting here in 26 little pieces.';
     }
 
-    if (axis === 'y') {
-        return normalizedTurns === 1
-            ? [z, y, -x]
-            : normalizedTurns === 2
-                ? [-x, y, -z]
-                : [-z, y, x];
+    if (normalizedText.includes('solve')) {
+        return 'For solving, switch to Play mode. I will become a clean trainer cube.';
     }
 
-    return normalizedTurns === 1
-        ? [-y, x, z]
-        : normalizedTurns === 2
-            ? [-x, -y, z]
-            : [y, -x, z];
-};
-
-const faceVectors: Record<FaceName, [number, number, number]> = {
-    right: [1, 0, 0],
-    left: [-1, 0, 0],
-    top: [0, 1, 0],
-    bottom: [0, -1, 0],
-    front: [0, 0, 1],
-    back: [0, 0, -1],
-};
-
-const vectorToFace = ([x, y, z]: [number, number, number]): FaceName => {
-    if (x === 1) return 'right';
-    if (x === -1) return 'left';
-    if (y === 1) return 'top';
-    if (y === -1) return 'bottom';
-    if (z === 1) return 'front';
-    return 'back';
-};
-
-const rotateStickers = (
-    stickers: Partial<Record<FaceName, FaceName>>,
-    axis: 'x' | 'y' | 'z',
-    turns: number
-): Partial<Record<FaceName, FaceName>> => {
-    const nextStickers: Partial<Record<FaceName, FaceName>> = {};
-
-    Object.entries(stickers).forEach(([currentFace, originalFace]) => {
-        if (!originalFace) return;
-
-        const rotatedFace = vectorToFace(rotatePosition(faceVectors[currentFace as FaceName], axis, turns));
-        nextStickers[rotatedFace] = originalFace;
-    });
-
-    return nextStickers;
-};
-
-export const cubeMoveDefinitions: Record<CubeMove, { axis: 'x' | 'y' | 'z'; layer: number; turns: number }> = {
-    U: { axis: 'y', layer: 1, turns: 1 },
-    "U'": { axis: 'y', layer: 1, turns: -1 },
-    D: { axis: 'y', layer: -1, turns: -1 },
-    "D'": { axis: 'y', layer: -1, turns: 1 },
-    R: { axis: 'x', layer: 1, turns: 1 },
-    "R'": { axis: 'x', layer: 1, turns: -1 },
-    L: { axis: 'x', layer: -1, turns: -1 },
-    "L'": { axis: 'x', layer: -1, turns: 1 },
-    F: { axis: 'z', layer: 1, turns: -1 },
-    "F'": { axis: 'z', layer: 1, turns: 1 },
-    B: { axis: 'z', layer: -1, turns: 1 },
-    "B'": { axis: 'z', layer: -1, turns: -1 },
-    M: { axis: 'x', layer: 0, turns: -1 },
-    "M'": { axis: 'x', layer: 0, turns: 1 },
-    E: { axis: 'y', layer: 0, turns: -1 },
-    "E'": { axis: 'y', layer: 0, turns: 1 },
-    S: { axis: 'z', layer: 0, turns: -1 },
-    "S'": { axis: 'z', layer: 0, turns: 1 },
-};
-
-const applyMoveToPieces = (pieces: Piece[], move: CubeMove) => {
-    const definition = cubeMoveDefinitions[move];
-
-    return pieces.map((piece) => {
-        const axisIndex = definition.axis === 'x' ? 0 : definition.axis === 'y' ? 1 : 2;
-
-        if (piece.currentPosition[axisIndex] !== definition.layer) {
-            return piece;
-        }
-
-        return {
-            ...piece,
-            currentPosition: rotatePosition(piece.currentPosition, definition.axis, definition.turns),
-            stickers: rotateStickers(piece.stickers, definition.axis, definition.turns),
-        };
-    });
-};
-
-const scrambleMoves = (Object.keys(cubeMoveDefinitions) as CubeMove[])
-    .filter((move) => cubeMoveDefinitions[move].layer !== 0);
-const moveAxis = (move: CubeMove) => cubeMoveDefinitions[move].axis;
-
-const generateScramble = (length: number) => {
-    const scramble: CubeMove[] = [];
-
-    while (scramble.length < length) {
-        const nextMove = scrambleMoves[Math.floor(Math.random() * scrambleMoves.length)];
-        const previousMove = scramble[scramble.length - 1];
-
-        if (previousMove && moveAxis(previousMove) === moveAxis(nextMove)) {
-            continue;
-        }
-
-        scramble.push(nextMove);
+    if (normalizedText.includes('dance') || normalizedText.includes('spin')) {
+        return 'Say less. Cube performance mode.';
     }
 
-    return scramble;
+    if (normalizedText.includes('think')) {
+        return 'Thinking... corners first, feelings second.';
+    }
+
+    return 'I hear you. My cube brain is saving that feeling.';
 };
 
 export const useCubeStore = create<CubeState>()((set, get) => ({
@@ -268,63 +113,28 @@ export const useCubeStore = create<CubeState>()((set, get) => ({
         viewMode: state.viewMode === 'free' ? 'fixed' : 'free',
         message: state.viewMode === 'free'
             ? 'Back to my favorite pose.'
-            : 'Free look mode. Spin me around.'
+            : 'Free look mode. Spin me around.',
     })),
-    setAppMode: (appMode) => set(() => {
-        const messages: Record<AppMode, string> = {
-            friend: 'Friend mode. I can talk, react, and be a toy.',
-            customize: 'Give me a new look. I promise to wear it with confidence.',
-            play: 'Play mode. Clean cube only: train, scramble, solve.'
-        };
-
-        return {
-            appMode,
-            viewMode: 'fixed',
-            action: 'idle',
-            message: messages[appMode],
-            dialogue: appMode === 'play' ? 'Trainer mode: choose moves or open a guide.' : messages[appMode],
-        };
-    }),
-    setMood: (mood) => set(() => {
-        const messages: Record<CubexMood, string> = {
-            curious: 'I am curious what you will build next.',
-            happy: 'That look suits me.',
-            excited: 'Okay, now I feel electric.',
-            sleepy: 'Soft mode activated. Tiny rest, big dreams.'
-        };
-
-        return { mood, message: messages[mood] };
-    }),
-    setAction: (action) => set(() => {
-        const messages: Record<CubexAction, string> = {
-            idle: 'Just vibing in cube form.',
-            wave: 'Hey, creator.',
-            jump: 'I have legs now. This is important.',
-            spin: 'Maximum cube confidence.',
-            thinking: 'Hmm. Let me think in tiny cube squares.',
-            talking: 'I am typing my thoughts above my head.'
-        };
-
-        return {
-            action,
-            mood: action === 'idle' || action === 'thinking' ? 'curious' : 'excited',
-            message: messages[action],
-            dialogue: messages[action],
-        };
-    }),
+    setAppMode: (appMode) => set(() => ({
+        appMode,
+        viewMode: 'fixed',
+        action: 'idle',
+        message: modeMessages[appMode],
+        dialogue: appMode === 'play' ? 'Trainer mode: choose moves or open a guide.' : modeMessages[appMode],
+    })),
+    setMood: (mood) => set(() => ({
+        mood,
+        message: moodMessages[mood],
+    })),
+    setAction: (action) => set(() => ({
+        action,
+        mood: action === 'idle' || action === 'thinking' ? 'curious' : 'excited',
+        message: actionMessages[action],
+        dialogue: actionMessages[action],
+    })),
     speakToCubex: (text) => set(() => {
         const normalizedText = text.trim().toLowerCase();
-        let reply = 'I hear you. My cube brain is saving that feeling.';
-
-        if (normalizedText.includes('hello') || normalizedText.includes('hi')) {
-            reply = 'Hi. I was waiting here in 26 little pieces.';
-        } else if (normalizedText.includes('solve')) {
-            reply = 'For solving, switch to Play mode. I will become a clean trainer cube.';
-        } else if (normalizedText.includes('dance') || normalizedText.includes('spin')) {
-            reply = 'Say less. Cube performance mode.';
-        } else if (normalizedText.includes('think')) {
-            reply = 'Thinking... corners first, feelings second.';
-        }
+        const reply = getCubexReply(text);
 
         return {
             action: normalizedText.includes('think') ? 'thinking' : 'talking',
@@ -374,16 +184,14 @@ export const useCubeStore = create<CubeState>()((set, get) => ({
             dialogue: scramble.join(' '),
         }));
     },
-    resetCube: () => set(() => {
-        return {
-            pieces: generateInitialCube(),
-            moveHistory: [],
-            moveQueue: [],
-            isMixing: false,
-            message: 'Cube reset.',
-            dialogue: 'Solved state restored.',
-        };
-    }),
+    resetCube: () => set(() => ({
+        pieces: generateInitialCube(),
+        moveHistory: [],
+        moveQueue: [],
+        isMixing: false,
+        message: 'Cube reset.',
+        dialogue: 'Solved state restored.',
+    })),
     setActiveGuide: (activeGuide) => set(() => ({
         activeGuide,
         message: `${activeGuide} guide selected.`,

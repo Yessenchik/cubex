@@ -1,7 +1,16 @@
 import type { AppMode, CubeMove, CubexAction, CubexMood, FaceName, SolvingGuide } from '../types/cube';
 
 export const appModes: AppMode[] = ['friend', 'customize', 'play'];
-export const friendActions: CubexAction[] = ['wave', 'jump', 'spin', 'thinking', 'talking', 'idle'];
+export const friendActions: CubexAction[] = [
+    'wave',
+    'jump',
+    'spin',
+    'spaceSpin',
+    'backflip',
+    'thinking',
+    'talking',
+    'idle',
+];
 export const moods: CubexMood[] = ['curious', 'happy', 'excited', 'sleepy'];
 export const editableFaces: FaceName[] = ['top', 'front', 'right', 'left', 'back', 'bottom'];
 

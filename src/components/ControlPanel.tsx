@@ -6,6 +6,7 @@ export function ControlPanel() {
     const appMode = useCubeStore((state) => state.appMode);
     const viewMode = useCubeStore((state) => state.viewMode);
     const mood = useCubeStore((state) => state.mood);
+    const action = useCubeStore((state) => state.action);
     const message = useCubeStore((state) => state.message);
     const dialogue = useCubeStore((state) => state.dialogue);
     const moveHistory = useCubeStore((state) => state.moveHistory);
@@ -15,6 +16,7 @@ export function ControlPanel() {
     const setAppMode = useCubeStore((state) => state.setAppMode);
     const toggleViewMode = useCubeStore((state) => state.toggleViewMode);
     const setAction = useCubeStore((state) => state.setAction);
+    const startBackflipAction = useCubeStore((state) => state.startBackflipAction);
     const setMood = useCubeStore((state) => state.setMood);
     const speakToCubex = useCubeStore((state) => state.speakToCubex);
     const applyMove = useCubeStore((state) => state.applyMove);
@@ -33,6 +35,15 @@ export function ControlPanel() {
 
         speakToCubex(chatText);
         setChatText('');
+    };
+
+    const handleToyAction = (nextAction: typeof friendActions[number]) => {
+        if (nextAction === 'backflip') {
+            startBackflipAction();
+            return;
+        }
+
+        setAction(nextAction);
     };
 
     return (
@@ -147,9 +158,18 @@ export function ControlPanel() {
                             <span>Toy Actions</span>
                         </div>
                         <div className="button-grid">
-                            {friendActions.map((action) => (
-                                <button key={action} onClick={() => setAction(action)}>
-                                    {action}
+                            {friendActions.map((nextAction) => (
+                                <button
+                                    key={nextAction}
+                                    className={action === nextAction ? 'selected' : ''}
+                                    aria-pressed={action === nextAction}
+                                    onClick={() => handleToyAction(nextAction)}
+                                >
+                                    {nextAction === 'backflip'
+                                        ? 'Back Flip'
+                                        : nextAction === 'spaceSpin'
+                                            ? 'Space Spin'
+                                            : nextAction}
                                 </button>
                             ))}
                         </div>

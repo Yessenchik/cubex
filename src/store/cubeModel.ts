@@ -168,6 +168,19 @@ export const applyMoveToPieces = (pieces: Piece[], move: CubeMove) => {
     });
 };
 
+export const invertMove = (move: CubeMove): CubeMove => (
+    move.endsWith("'") ? move.slice(0, -1) : `${move}'`
+) as CubeMove;
+
+export const invertMoves = (moves: CubeMove[]) => [...moves].reverse().map(invertMove);
+
+export const isCubeSolved = (pieces: Piece[]) => pieces.every((piece) => {
+    const isHome = piece.currentPosition.every((coordinate, index) => coordinate === piece.initialPosition[index]);
+    const stickersAreHome = Object.entries(piece.stickers).every(([face, originalFace]) => face === originalFace);
+
+    return isHome && stickersAreHome;
+});
+
 const scrambleMoves = (Object.keys(cubeMoveDefinitions) as CubeMove[])
     .filter((move) => cubeMoveDefinitions[move].layer !== 0);
 const moveAxis = (move: CubeMove) => cubeMoveDefinitions[move].axis;

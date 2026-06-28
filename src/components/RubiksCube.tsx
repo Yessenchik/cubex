@@ -7,7 +7,9 @@ import { cubeMoveDefinitions, type CubeMove, type Piece, useCubeStore } from '..
 import { easeTurn, getLayerCoordinate, inferMoveFromDrag, type Axis } from '../scene/cubeGestures';
 
 const DEFAULT_FIXED_QUATERNION = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0));
-const TURN_DURATION = 0.32;
+const TURN_DURATION = 0.5;
+const BACKFLIP_TURN_DURATION = 0.1;
+const SPACE_SPIN_DURATION = 3.35;
 
 interface ActiveLayerTurn {
     move: CubeMove;
@@ -33,7 +35,10 @@ export function RubiksCube() {
     const mood = useCubeStore((state) => state.mood);
     const action = useCubeStore((state) => state.action);
     const dialogue = useCubeStore((state) => state.dialogue);
+    const backflipMoveCount = useCubeStore((state) => state.backflipMoveCount);
     const setAction = useCubeStore((state) => state.setAction);
+    const finishToyAction = useCubeStore((state) => state.finishToyAction);
+    const finishBackflipAction = useCubeStore((state) => state.finishBackflipAction);
     const applyMove = useCubeStore((state) => state.applyMove);
     const popNextMove = useCubeStore((state) => state.popNextMove);
     const commitMove = useCubeStore((state) => state.commitMove);
@@ -50,9 +55,13 @@ export function RubiksCube() {
     const targetQuaternion = useRef(new THREE.Quaternion().copy(DEFAULT_FIXED_QUATERNION));
     const friendPresenceRef = useRef(1);
     const previousAppModeRef = useRef(appMode);
+    const previousActionRef = useRef(action);
+    const actionStartedAtRef = useRef(0);
+    const actionFinishedRef = useRef(false);
+    const lookTargetRef = useRef({ x: 0, y: 0 });
     const piecesRef = useRef(pieces);
     const activeTurnRef = useRef<ActiveLayerTurn | null>(null);
-    const [faceMotion, setFaceMotion] = useState({ blink: 1, smile: 0.5 });
+    const [faceMotion, setFaceMotion] = useState({ blink: 1, smile: 0.5, lookX: 0, lookY: 0 });
     const [friendPresence, setFriendPresence] = useState(1);
     const [handoffBubble, setHandoffBubble] = useState<{ text: string; key: number } | null>(null);
     const [activeTurn, setActiveTurn] = useState<ActiveLayerTurn | null>(null);
@@ -88,6 +97,12 @@ export function RubiksCube() {
             targetQuaternion.current.copy(DEFAULT_FIXED_QUATERNION);
         }
     }, [isFriendMode, viewMode]);
+
+    useEffect(() => {
+        actionStartedAtRef.current = 0;
+        actionFinishedRef.current = false;
+        previousActionRef.current = action;
+    }, [action]);
 
     const dragStartInfo = useRef<DragStartInfo | null>(null);
 
@@ -184,6 +199,14 @@ export function RubiksCube() {
     };
 
     const handleBgPointerMove = (e: ThreeEvent<PointerEvent>) => {
+        if (isFriendMode) {
+            lookTargetRef.current = {
+                x: THREE.MathUtils.clamp((e.clientX / window.innerWidth - 0.5) * 2, -1, 1),
+                y: THREE.MathUtils.clamp((0.5 - e.clientY / window.innerHeight) * 2, -1, 1),
+            };
+            return;
+        }
+
         if (!isDraggingGlobal.current || viewMode !== 'free' || isFriendMode) return;
 
         const deltaX = e.clientX - previousMouse.current.x;
@@ -221,11 +244,48 @@ export function RubiksCube() {
 
     useFrame(({ clock }, delta) => {
         const elapsed = clock.getElapsedTime();
-        const jump = action === 'jump' ? Math.max(0, Math.sin(elapsed * 7)) * 0.58 : 0;
-        const spin = action === 'spin' ? Math.sin(elapsed * 2.8) * 0.55 : Math.sin(elapsed * 0.8) * 0.025;
-        const wave = action === 'wave' ? Math.sin(elapsed * 7) * 0.85 : Math.sin(elapsed * 1.7) * 0.16;
-        const footSwing = action === 'jump' ? Math.sin(elapsed * 7) * 0.35 : Math.sin(elapsed * 1.8) * 0.08;
-        const nextPresence = THREE.MathUtils.lerp(friendPresenceRef.current, isFriendMode ? 1 : 0, 0.14);
+        if (actionStartedAtRef.current === 0 || previousActionRef.current !== action) {
+            actionStartedAtRef.current = elapsed;
+            previousActionRef.current = action;
+            actionFinishedRef.current = false;
+        }
+
+        const actionElapsed = elapsed - actionStartedAtRef.current;
+        const spinProgress = action === 'spin' ? Math.min(actionElapsed / 1.25, 1) : 0;
+        const spaceSpinProgress = action === 'spaceSpin' ? Math.min(actionElapsed / SPACE_SPIN_DURATION, 1) : 0;
+        const turnDuration = action === 'backflip' ? BACKFLIP_TURN_DURATION : TURN_DURATION;
+        const backflipDuration = Math.max(1.05, backflipMoveCount * BACKFLIP_TURN_DURATION + 0.34);
+        const backflipProgress = action === 'backflip' ? Math.min(actionElapsed / backflipDuration, 1) : 0;
+        const backflipAirborne = action === 'backflip' && backflipProgress > 0.12 && backflipProgress < 0.9;
+        const jump = action === 'jump'
+            ? Math.max(0, Math.sin(elapsed * 7)) * 0.58
+            : action === 'backflip'
+                ? Math.sin(backflipProgress * Math.PI) * 1.18
+                : action === 'spaceSpin'
+                    ? Math.sin(spaceSpinProgress * Math.PI) * 0.82 + Math.sin(elapsed * 4.2) * 0.055
+                : 0;
+        const spin = action === 'spin'
+            ? easeTurn(spinProgress) * Math.PI * 2
+            : action === 'spaceSpin'
+                ? easeTurn(spaceSpinProgress) * Math.PI * 2.8 + Math.sin(elapsed * 1.6) * 0.18
+            : Math.sin(elapsed * 0.8) * 0.025;
+        const backflipRotation = action === 'backflip'
+            ? -(1 - Math.pow(1 - backflipProgress, 2)) * Math.PI * 2
+            : action === 'spaceSpin'
+                ? Math.sin(spaceSpinProgress * Math.PI) * 0.42 + Math.sin(elapsed * 2.1) * 0.08
+            : 0;
+        const spaceRoll = action === 'spaceSpin'
+            ? Math.sin(spaceSpinProgress * Math.PI) * 0.34 + Math.sin(elapsed * 2.4) * 0.08
+            : 0;
+        const moodEnergy = mood === 'excited' ? 1.45 : mood === 'happy' ? 1.15 : mood === 'sleepy' ? 0.45 : 0.85;
+        const wave = action === 'wave'
+            ? Math.sin(elapsed * 7) * 0.85
+            : Math.sin(elapsed * (1.25 + moodEnergy)) * 0.12 * moodEnergy;
+        const footSwing = action === 'jump' || action === 'backflip'
+            ? Math.sin(elapsed * 7) * 0.35
+            : Math.sin(elapsed * (1.2 + moodEnergy)) * 0.06 * moodEnergy;
+        const shouldShowFriendRig = isFriendMode && !backflipAirborne;
+        const nextPresence = THREE.MathUtils.lerp(friendPresenceRef.current, shouldShowFriendRig ? 1 : 0, 0.18);
         friendPresenceRef.current = nextPresence;
 
         if (Math.abs(nextPresence - friendPresence) > 0.02 || nextPresence < 0.02 || nextPresence > 0.98) {
@@ -247,7 +307,7 @@ export function RubiksCube() {
         if (activeTurnRef.current && animatedLayerRef.current) {
             const turn = activeTurnRef.current;
             turn.elapsed += delta;
-            const progress = Math.min(turn.elapsed / TURN_DURATION, 1);
+            const progress = Math.min(turn.elapsed / turnDuration, 1);
             const angle = easeTurn(progress) * turn.turns * Math.PI / 2;
 
             animatedLayerRef.current.rotation.set(0, 0, 0);
@@ -272,14 +332,48 @@ export function RubiksCube() {
 
         if (avatarRef.current) {
             if (isFriendMode) {
-                avatarRef.current.position.y = Math.sin(elapsed * 1.4) * 0.05 + jump;
+                const moodBob = mood === 'excited'
+                    ? Math.sin(elapsed * 4.8) * 0.075
+                    : mood === 'happy'
+                        ? Math.sin(elapsed * 2.4) * 0.055
+                        : mood === 'sleepy'
+                            ? Math.sin(elapsed * 0.7) * 0.025 - 0.04
+                            : Math.sin(elapsed * 1.35) * 0.04;
+                const curiousLean = mood === 'curious' ? lookTargetRef.current.x * 0.045 : 0;
+
+                avatarRef.current.position.y = moodBob + jump;
                 avatarRef.current.rotation.y = spin;
-                avatarRef.current.scale.setScalar(1 + Math.sin(elapsed * 2) * 0.012);
+                avatarRef.current.rotation.x = backflipRotation;
+                avatarRef.current.rotation.z = curiousLean + spaceRoll;
+                avatarRef.current.scale.setScalar(
+                    mood === 'excited'
+                        ? 1 + Math.sin(elapsed * 5.5) * 0.026
+                        : mood === 'sleepy'
+                            ? 0.985 + Math.sin(elapsed * 1.1) * 0.006
+                            : 1 + Math.sin(elapsed * 2) * 0.012
+                );
             } else {
                 avatarRef.current.position.y = 0;
                 avatarRef.current.rotation.y = 0;
+                avatarRef.current.rotation.x = 0;
+                avatarRef.current.rotation.z = 0;
                 avatarRef.current.scale.setScalar(1);
             }
+        }
+
+        if (action === 'backflip' && backflipProgress >= 1 && !actionFinishedRef.current) {
+            actionFinishedRef.current = true;
+            finishBackflipAction();
+        }
+
+        if (action === 'spin' && spinProgress >= 1 && !actionFinishedRef.current) {
+            actionFinishedRef.current = true;
+            finishToyAction();
+        }
+
+        if (action === 'spaceSpin' && spaceSpinProgress >= 1 && !actionFinishedRef.current) {
+            actionFinishedRef.current = true;
+            finishToyAction();
         }
 
         if (friendRigRef.current) {
@@ -289,32 +383,58 @@ export function RubiksCube() {
         }
 
         if (leftArmRef.current) {
-            leftArmRef.current.rotation.z = -0.35 - wave * 0.35;
-            leftArmRef.current.rotation.x = action === 'wave' ? Math.sin(elapsed * 9) * 0.18 : 0;
+            leftArmRef.current.rotation.z = action === 'spaceSpin'
+                ? -0.68 + Math.sin(elapsed * 2.3) * 0.18
+                : mood === 'sleepy' ? -0.18 : -0.35 - wave * 0.35;
+            leftArmRef.current.rotation.x = action === 'spaceSpin'
+                ? Math.sin(elapsed * 1.7) * 0.34
+                : action === 'wave' ? Math.sin(elapsed * 9) * 0.18 : 0;
         }
 
         if (rightArmRef.current) {
-            rightArmRef.current.rotation.z = 0.35 + wave;
-            rightArmRef.current.rotation.x = action === 'wave' ? Math.cos(elapsed * 8) * 0.24 : 0;
+            rightArmRef.current.rotation.z = action === 'spaceSpin'
+                ? 0.68 + Math.cos(elapsed * 2.1) * 0.18
+                : mood === 'sleepy' ? 0.18 : 0.35 + wave;
+            rightArmRef.current.rotation.x = action === 'spaceSpin'
+                ? Math.cos(elapsed * 1.5) * 0.34
+                : action === 'wave' ? Math.cos(elapsed * 8) * 0.24 : 0;
         }
 
         if (leftLegRef.current) {
-            leftLegRef.current.rotation.x = footSwing;
+            leftLegRef.current.rotation.x = action === 'spaceSpin'
+                ? Math.sin(elapsed * 1.9) * 0.24 - 0.12
+                : footSwing;
         }
 
         if (rightLegRef.current) {
-            rightLegRef.current.rotation.x = -footSwing;
+            rightLegRef.current.rotation.x = action === 'spaceSpin'
+                ? Math.cos(elapsed * 1.8) * 0.24 + 0.12
+                : -footSwing;
         }
 
         if (isFriendMode) {
-            const blink = mood === 'sleepy' || action === 'thinking' ? 0.32 : 0.72 + Math.sin(elapsed * 3.2) * 0.28;
-            const smile = action === 'talking' ? 0.92 : mood === 'excited' ? 1 : mood === 'happy' ? 0.75 : mood === 'sleepy' ? 0.25 : 0.5;
+            const blink = mood === 'sleepy'
+                ? 0.42 + Math.sin(elapsed * 1.2) * 0.16
+                : action === 'thinking'
+                    ? 0.58 + Math.sin(elapsed * 4) * 0.12
+                    : 0.78 + Math.sin(elapsed * (mood === 'excited' ? 5.4 : 3.2)) * 0.22;
+            const smile = action === 'spaceSpin'
+                ? 0.85
+                : action === 'talking' ? 0.92 : mood === 'excited' ? 1 : mood === 'happy' ? 0.75 : mood === 'sleepy' ? 0.25 : 0.5;
             setFaceMotion((previous) => {
-                if (Math.abs(previous.blink - blink) < 0.025 && Math.abs(previous.smile - smile) < 0.025) {
+                const nextLookX = THREE.MathUtils.lerp(previous.lookX, lookTargetRef.current.x, 0.12);
+                const nextLookY = THREE.MathUtils.lerp(previous.lookY, lookTargetRef.current.y, 0.12);
+
+                if (
+                    Math.abs(previous.blink - blink) < 0.025
+                    && Math.abs(previous.smile - smile) < 0.025
+                    && Math.abs(previous.lookX - nextLookX) < 0.015
+                    && Math.abs(previous.lookY - nextLookY) < 0.015
+                ) {
                     return previous;
                 }
 
-                return { blink, smile };
+                return { blink, smile, lookX: nextLookX, lookY: nextLookY };
             });
         }
     });
@@ -376,7 +496,12 @@ export function RubiksCube() {
                                 variant="handoff"
                             />
                         )}
-                        <CubexFace blink={faceMotion.blink} smile={faceMotion.smile} />
+                        <CubexFace
+                            blink={faceMotion.blink}
+                            smile={faceMotion.smile}
+                            lookX={faceMotion.lookX}
+                            lookY={faceMotion.lookY}
+                        />
                         <group position={[0, -0.05, 0]}>
                             <CubexLimbs
                                 leftArmRef={leftArmRef}

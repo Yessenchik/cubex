@@ -1,7 +1,15 @@
 export type PieceType = 'center' | 'edge' | 'corner';
 export type AppMode = 'friend' | 'customize' | 'play';
 export type CubexMood = 'curious' | 'happy' | 'excited' | 'sleepy';
-export type CubexAction = 'idle' | 'wave' | 'jump' | 'spin' | 'thinking' | 'talking';
+export type CubexAction =
+    | 'idle'
+    | 'wave'
+    | 'jump'
+    | 'spin'
+    | 'spaceSpin'
+    | 'backflip'
+    | 'thinking'
+    | 'talking';
 
 export type CubeMove =
     | 'U' | "U'"

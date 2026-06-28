@@ -1,5 +1,12 @@
 import { create } from 'zustand';
-import { applyMoveToPieces, cubePresets, generateInitialCube, generateScramble } from './cubeModel';
+import {
+    applyMoveToPieces,
+    cubePresets,
+    generateInitialCube,
+    generateScramble,
+    invertMoves,
+    isCubeSolved,
+} from './cubeModel';
 import type {
     AppMode,
     CubeMove,
@@ -34,6 +41,8 @@ interface CubeState {
     dialogue: string;
     moveHistory: CubeMove[];
     moveQueue: CubeMove[];
+    backflipMode: 'mix' | 'solve' | null;
+    backflipMoveCount: number;
     activeGuide: GuideName;
     isMixing: boolean;
     palette: CubePalette;
@@ -41,6 +50,9 @@ interface CubeState {
     setAppMode: (mode: AppMode) => void;
     setMood: (mood: CubexMood) => void;
     setAction: (action: CubexAction) => void;
+    finishToyAction: () => void;
+    startBackflipAction: () => void;
+    finishBackflipAction: () => void;
     speakToCubex: (text: string) => void;
     applyMove: (move: CubeMove) => void;
     popNextMove: () => CubeMove | undefined;
@@ -70,6 +82,8 @@ const actionMessages: Record<CubexAction, string> = {
     wave: 'Hey, creator.',
     jump: 'I have legs now. This is important.',
     spin: 'Maximum cube confidence.',
+    spaceSpin: 'Zero gravity mode. I am orbiting my own little universe.',
+    backflip: 'Watch this. If I land it, I become a mixed cube.',
     thinking: 'Hmm. Let me think in tiny cube squares.',
     talking: 'I am typing my thoughts above my head.',
 };
@@ -106,6 +120,8 @@ export const useCubeStore = create<CubeState>()((set, get) => ({
     dialogue: 'Say something to Cubex.',
     moveHistory: [],
     moveQueue: [],
+    backflipMode: null,
+    backflipMoveCount: 0,
     activeGuide: 'CFOP / Fridrich',
     isMixing: false,
     palette: cubePresets.classic,
@@ -128,17 +144,56 @@ export const useCubeStore = create<CubeState>()((set, get) => ({
     })),
     setAction: (action) => set(() => ({
         action,
-        mood: action === 'idle' || action === 'thinking' ? 'curious' : 'excited',
         message: actionMessages[action],
         dialogue: actionMessages[action],
     })),
+    finishToyAction: () => set(() => ({
+        action: 'idle',
+    })),
+    startBackflipAction: () => {
+        const state = get();
+
+        if (state.action === 'backflip') return;
+
+        const solved = isCubeSolved(state.pieces);
+        const moves = solved ? generateScramble(7) : invertMoves(state.moveHistory);
+        const mode = solved ? 'mix' : 'solve';
+
+        set(() => ({
+            action: 'backflip',
+            moveQueue: moves,
+            backflipMode: mode,
+            backflipMoveCount: moves.length,
+            isMixing: moves.length > 0,
+            message: solved
+                ? 'Back flip mix demo. I turn into a clean cube in the air.'
+                : 'Back flip solve demo. I will unwind the moves in the air.',
+            dialogue: moves.length ? moves.join(' ') : 'No move history yet, but I can still flip.',
+        }));
+    },
+    finishBackflipAction: () => set((state) => {
+        const solvedLanding = state.backflipMode === 'solve';
+
+        return {
+            pieces: solvedLanding ? generateInitialCube() : state.pieces,
+            action: 'idle',
+            moveHistory: solvedLanding ? [] : state.moveHistory,
+            moveQueue: [],
+            backflipMode: null,
+            backflipMoveCount: 0,
+            isMixing: false,
+            message: solvedLanding
+                ? 'Back flip landed. Solved again.'
+                : 'Back flip landed. I mixed myself.',
+            dialogue: solvedLanding ? 'Solved state restored.' : 'Mixed and ready to play.',
+        };
+    }),
     speakToCubex: (text) => set(() => {
         const normalizedText = text.trim().toLowerCase();
         const reply = getCubexReply(text);
 
         return {
             action: normalizedText.includes('think') ? 'thinking' : 'talking',
-            mood: normalizedText.includes('dance') || normalizedText.includes('spin') ? 'excited' : 'happy',
             message: reply,
             dialogue: reply,
         };
@@ -199,12 +254,10 @@ export const useCubeStore = create<CubeState>()((set, get) => ({
     })),
     setFaceColor: (face, color) => set((state) => ({
         palette: { ...state.palette, [face]: color },
-        mood: 'happy',
         message: 'Nice. My style is becoming more original.',
     })),
     applyPreset: (presetName) => set(() => ({
         palette: cubePresets[presetName],
-        mood: presetName === 'midnight' ? 'excited' : 'happy',
         message: `${presetName[0].toUpperCase()}${presetName.slice(1)} style loaded.`,
     })),
 }));

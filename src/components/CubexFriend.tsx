@@ -2,20 +2,62 @@ import { useEffect, useState } from 'react';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 
-export function CubexFace({ blink, smile }: { blink: number; smile: number }) {
-    const eyeHeight = Math.max(0.035, 0.16 * blink);
+function CubexEye({ x, blink, lookX, lookY }: { x: number; blink: number; lookX: number; lookY: number }) {
+    const eyeOpen = Math.max(0.035, 0.13 * blink);
+    const pupilVisible = eyeOpen > 0.06;
+    const pupilX = THREE.MathUtils.clamp(lookX, -1, 1) * 0.025;
+    const pupilY = THREE.MathUtils.clamp(lookY, -1, 1) * 0.02;
+
+    return (
+        <group position={[x, 0.22, 0.012]}>
+            <mesh position={[0, 0, -0.004]} scale={[0.145, eyeOpen + 0.018, 0.007]}>
+                <sphereGeometry args={[1, 32, 16]} />
+                <meshStandardMaterial color="#0F172A" roughness={0.34} />
+            </mesh>
+
+            <mesh position={[0, 0, 0.012]} scale={[0.12, eyeOpen, 0.016]}>
+                <sphereGeometry args={[1, 32, 16]} />
+                <meshStandardMaterial color="#FFFFFF" roughness={0.2} />
+            </mesh>
+
+            {pupilVisible ? (
+                <>
+                    <mesh position={[pupilX, pupilY - 0.002, 0.034]} scale={[0.038, eyeOpen * 0.42, 0.009]}>
+                        <sphereGeometry args={[1, 24, 12]} />
+                        <meshStandardMaterial color="#0F172A" roughness={0.2} />
+                    </mesh>
+                    <mesh position={[pupilX - 0.01, pupilY + 0.02, 0.042]} scale={[0.008, 0.008, 0.004]}>
+                        <sphereGeometry args={[1, 12, 8]} />
+                        <meshStandardMaterial color="#FFFFFF" roughness={0.1} />
+                    </mesh>
+                </>
+            ) : (
+                <mesh position={[0, 0, 0.034]} scale={[0.14, 0.012, 0.006]}>
+                    <boxGeometry args={[1, 1, 1]} />
+                    <meshStandardMaterial color="#0F172A" roughness={0.24} />
+                </mesh>
+            )}
+        </group>
+    );
+}
+
+export function CubexFace({
+    blink,
+    smile,
+    lookX = 0,
+    lookY = 0,
+}: {
+    blink: number;
+    smile: number;
+    lookX?: number;
+    lookY?: number;
+}) {
     const mouthWidth = 0.38 + smile * 0.08;
 
     return (
         <group position={[0, 0.36, 1.49]}>
-            <mesh position={[-0.38, 0.22, 0]}>
-                <boxGeometry args={[0.22, eyeHeight, 0.035]} />
-                <meshStandardMaterial color="#0F172A" roughness={0.2} />
-            </mesh>
-            <mesh position={[0.38, 0.22, 0]}>
-                <boxGeometry args={[0.22, eyeHeight, 0.035]} />
-                <meshStandardMaterial color="#0F172A" roughness={0.2} />
-            </mesh>
+            <CubexEye x={-0.32} blink={blink} lookX={lookX} lookY={lookY} />
+            <CubexEye x={0.32} blink={blink} lookX={lookX} lookY={lookY} />
             <mesh position={[0, -0.12, 0]}>
                 <boxGeometry args={[mouthWidth, 0.055, 0.035]} />
                 <meshStandardMaterial color="#0F172A" roughness={0.25} />
